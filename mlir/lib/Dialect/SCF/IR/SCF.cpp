@@ -2663,6 +2663,12 @@ struct CombineNestedIfs : public OpRewritePattern<IfOp> {
     }
 
     Location loc = op.getLoc();
+    Location nestedLoc = nestedIf.getLoc();
+    // If the outer ifOp has an unknown location and the nested ifOp doesn't,
+    // then set the loc of the new ifOp to that of the nested ifOp.
+    if (isa<UnknownLoc>(loc) && !isa<UnknownLoc>(nestedLoc))
+      loc = nestedLoc;
+
     Value newCondition = rewriter.create<arith::AndIOp>(
         loc, op.getCondition(), nestedIf.getCondition());
     auto newIf = rewriter.create<IfOp>(loc, op.getResultTypes(), newCondition);

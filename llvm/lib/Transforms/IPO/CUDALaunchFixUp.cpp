@@ -41,41 +41,7 @@ SmallVector<CallInst *> gatherCallers(Function *F) {
   return ToHandle;
 }
 
-void fixup(Module &M) {
-  auto LaunchKernelFunc = M.getFunction(cudaLaunchSymbolName);
-  if (!LaunchKernelFunc)
-    return;
-
-  SmallPtrSet<CallInst *, 8> CoercedKernels;
-  for (CallInst *CI : gatherCallers(LaunchKernelFunc)) {
-    IRBuilder<> Builder(CI);
-    auto FuncPtr = CI->getArgOperand(0);
-    auto GridDim1 = CI->getArgOperand(1);
-    auto GridDim2 = CI->getArgOperand(2);
-    auto BlockDim1 = CI->getArgOperand(3);
-    auto BlockDim2 = CI->getArgOperand(4);
-    auto SharedMemSize = CI->getArgOperand(6);
-    auto StreamPtr = CI->getArgOperand(7);
-    SmallVector<Value *> Args = {
-        FuncPtr,   GridDim1,      GridDim2,  BlockDim1,
-        BlockDim2, SharedMemSize, StreamPtr,
-    };
-    auto StubFunc = cast<Function>(CI->getArgOperand(0));
-    for (auto &Arg : StubFunc->args())
-      Args.push_back(&Arg);
-    SmallVector<Type *> ArgTypes;
-    for (Value *V : Args)
-      ArgTypes.push_back(V->getType());
-    auto MlirLaunchFunc = Function::Create(
-        FunctionType::get(Type::getVoidTy(M.getContext()), ArgTypes,
-                          /*isVarAtg=*/false),
-        llvm::GlobalValue::ExternalLinkage,
-        kernelCoercedPrefix + StubFunc->getName(), M);
-
-    CoercedKernels.insert(Builder.CreateCall(MlirLaunchFunc, Args));
-    CI->eraseFromParent();
-  }
-
+void inlineStubFunctions(SmallPtrSet<CallInst *, 8> &CoercedKernels){
   SmallVector<Function *> InlinedStubs;
   for (CallInst *CI : CoercedKernels) {
     Function *StubFunc = cast<Function>(CI->getArgOperand(0));
@@ -97,8 +63,9 @@ void fixup(Module &M) {
     BasicBlock *BB = BasicBlock::Create(F->getContext(), "entry", F);
     ReturnInst::Create(F->getContext(), nullptr, BB->begin());
   }
+}
 
-  CoercedKernels.clear();
+void handleCudaPushPopConfigs(Module &M, SmallPtrSet<CallInst *, 8> &CoercedKernels) {
   DenseMap<Function *, SmallVector<AllocaInst *, 6>> FuncAllocas;
   auto PushConfigFunc = M.getFunction(cudaPushConfigName);
   for (CallInst *CI : gatherCallers(PushConfigFunc)) {
@@ -212,10 +179,170 @@ void fixup(Module &M) {
   }
 }
 
+void fixup(Module &M) {
+  auto LaunchKernelFunc = M.getFunction(cudaLaunchSymbolName);
+  if (!LaunchKernelFunc)
+    return;
+
+  SmallPtrSet<CallInst *, 8> CoercedKernels;
+  for (CallInst *CI : gatherCallers(LaunchKernelFunc)) {
+    IRBuilder<> Builder(CI);
+    auto FuncPtr = CI->getArgOperand(0);
+    auto GridDim1 = CI->getArgOperand(1);
+    auto GridDim2 = CI->getArgOperand(2);
+    auto BlockDim1 = CI->getArgOperand(3);
+    auto BlockDim2 = CI->getArgOperand(4);
+    auto SharedMemSize = CI->getArgOperand(6);
+    auto StreamPtr = CI->getArgOperand(7);
+    SmallVector<Value *> Args = {
+        FuncPtr,   GridDim1,      GridDim2,  BlockDim1,
+        BlockDim2, SharedMemSize, StreamPtr,
+    };
+    auto StubFunc = cast<Function>(CI->getArgOperand(0));
+    for (auto &Arg : StubFunc->args())
+      Args.push_back(&Arg);
+    SmallVector<Type *> ArgTypes;
+    for (Value *V : Args)
+      ArgTypes.push_back(V->getType());
+    auto MlirLaunchFunc = Function::Create(
+        FunctionType::get(Type::getVoidTy(M.getContext()), ArgTypes,
+                          /*isVarAtg=*/false),
+        llvm::GlobalValue::ExternalLinkage,
+        kernelCoercedPrefix + StubFunc->getName(), M);
+
+    CoercedKernels.insert(Builder.CreateCall(MlirLaunchFunc, Args));
+    CI->eraseFromParent();
+  }
+
+  inlineStubFunctions(CoercedKernels);
+  CoercedKernels.clear();
+  handleCudaPushPopConfigs(M, CoercedKernels);
+}
+
+//declare i32 @__cudaPushCallConfiguration(i64 %0, i32 %1, i64 %2, i32 %3, i64 noundef %4, ptr noundef %5) #3
+Function *getOrCreateCudaPushConfig(Module &M, StringRef cudaPushConfigName, Function *CollectiveLaunchFunc) {
+  // Try to get the function
+  Function *PushConfigFunc = M.getFunction(cudaPushConfigName);
+  if (PushConfigFunc)
+    return PushConfigFunc;
+
+  // If not found, define it
+  LLVMContext &Ctx = M.getContext();
+  Type *Int32Ty = Type::getInt32Ty(Ctx);
+  Type *Int64Ty = Type::getInt64Ty(Ctx);
+  Type *PtrTy = PointerType::getUnqual(Ctx);  // Assuming a generic pointer type
+
+  // Function signature: i32 (i64, i32, i64, i32, i64, ptr)
+  FunctionType *PushConfigType = FunctionType::get(
+      Int32Ty, {Int64Ty, Int32Ty, Int64Ty, Int32Ty, Int64Ty, PtrTy}, false);
+
+  // Create the function declaration
+  PushConfigFunc = Function::Create(PushConfigType, 
+                                    Function::ExternalLinkage, 
+                                    cudaPushConfigName, 
+                                    &M);
+
+  // including the below leads to the error:
+  // Attribute after last parameter!
+  // ptr @__cudaPushCallConfiguration
+  // if (CollectiveLaunchFunc) {
+  //   AttributeList Attrs = CollectiveLaunchFunc->getAttributes();
+  //   PushConfigFunc->setAttributes(Attrs);
+  // }
+  // PushConfigFunc->addParamAttr(4, llvm::Attribute::NoUndef);
+  // PushConfigFunc->addParamAttr(5, llvm::Attribute::NoUndef);
+
+  return PushConfigFunc;
+}
+
+void fixup_nvshmem(Module &M){
+  auto CollectiveLaunchFunc = M.getFunction("nvshmemx_collective_launch");
+  if (!CollectiveLaunchFunc)
+      return;
+  
+  for (CallInst *CI : gatherCallers(CollectiveLaunchFunc)) {
+    IRBuilder<> Builder(CI);
+    auto *FuncPtr = CI->getArgOperand(0);
+    auto GridDim1 = CI->getArgOperand(1);
+    auto GridDim2 = CI->getArgOperand(2);
+    auto BlockDim1 = CI->getArgOperand(3);
+    auto BlockDim2 = CI->getArgOperand(4);
+    auto ArgsPointer = CI->getArgOperand(5);
+    auto SharedMemSize = CI->getArgOperand(6);
+    auto StreamPtr = CI->getArgOperand(7);
+
+    auto *StubFunc = cast<Function>(FuncPtr);
+
+    // **Insert cudaPushConfig Call**
+    auto PushConfigFunc = getOrCreateCudaPushConfig(M, cudaPushConfigName, CollectiveLaunchFunc);
+    SmallVector<Value *> PushArgs = { GridDim1, GridDim2, BlockDim1, BlockDim2, SharedMemSize, StreamPtr };
+    Builder.SetInsertPoint(CI);
+    Value *PushResult = Builder.CreateCall(PushConfigFunc, PushArgs);
+
+    // **Create Branch Condition**
+    Value *ConfigFailed = Builder.CreateICmpNE(PushResult, ConstantInt::get(Type::getInt32Ty(M.getContext()), 0));
+
+    Function *ParentFunc = CI->getFunction();
+    BasicBlock *NextBlock = CI->getParent()->getNextNode();
+    BasicBlock *ConfigOKBlock = BasicBlock::Create(M.getContext(), "kcall.configok", ParentFunc, NextBlock);
+    BasicBlock *ConfigEndBlock = BasicBlock::Create(M.getContext(), "kcall.end", ParentFunc, NextBlock);
+
+    Builder.CreateCondBr(ConfigFailed, ConfigEndBlock, ConfigOKBlock);
+
+    // **Insert Call to StubFunc in the 'configok' block**
+    Builder.SetInsertPoint(ConfigOKBlock);
+
+    SmallVector<Value *> Args;
+    unsigned ArgIndex = 0;
+    for (auto &Arg : StubFunc->args()) {
+        Value *ArgPtr = Builder.CreateGEP(
+            Builder.getPtrTy(), ArgsPointer,
+            ConstantInt::get(Type::getInt32Ty(M.getContext()), ArgIndex));
+        Value *ArgVal = Builder.CreateLoad(Arg.getType(), ArgPtr);
+        Args.push_back(ArgVal);
+        ArgIndex++;
+    }
+
+    Builder.CreateCall(StubFunc, Args);
+    Builder.CreateBr(ConfigEndBlock);  // Jump to kcall.end after function call
+
+    // **Move remaining instructions from original block after collective launch to 'kcall.end'**
+    BasicBlock *OrigBlock = CI->getParent();
+    SmallVector<Instruction *, 8> instructionsToMove;
+
+    // Collect instructions after CI
+    bool foundCall = false;
+    for (auto &Inst : *OrigBlock) {
+      if (&Inst == CI) {
+        foundCall = true;
+        continue;
+      }
+
+      if (foundCall) {
+        instructionsToMove.push_back(&Inst);
+      }
+    }
+
+    // Move instructions into ConfigEndBlock
+    for (auto *Inst : instructionsToMove) {
+      Inst->removeFromParent();
+      Inst->insertInto(ConfigEndBlock, ConfigEndBlock->end());
+    }
+
+    // **Delete the original call to nvshmemx_collective_launch**
+    CI->eraseFromParent();
+  }
+
+  // **Delete the collective launch function if it's no longer needed**
+  if (CollectiveLaunchFunc->use_empty()) {
+    CollectiveLaunchFunc->eraseFromParent();
+  }
+}
 } // namespace
 
 PreservedAnalyses llvm::CUDALaunchFixUp::run(Module &M,
                                              ModuleAnalysisManager &) {
+  fixup_nvshmem(M);
   fixup(M);
   return PreservedAnalyses::none();
 }

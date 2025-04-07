@@ -43,21 +43,28 @@ SmallVector<CallInst *> gatherCallers(Function *F) {
 
 void inlineStubFunctions(SmallPtrSet<CallInst *, 8> &CoercedKernels){
   SmallVector<Function *> InlinedStubs;
+  SmallVector<CallInst *> ToBeInlinedCIs;
   for (CallInst *CI : CoercedKernels) {
     Function *StubFunc = cast<Function>(CI->getArgOperand(0));
     for (User *callee : StubFunc->users()) {
-      if (auto *CI = dyn_cast<CallInst>(callee)) {
-        if (CI->getCalledFunction() == StubFunc) {
-          InlineFunctionInfo IFI;
-          InlineResult Res =
-              InlineFunction(*CI, IFI, /*MergeAttributes=*/false);
-          assert(Res.isSuccess());
-          InlinedStubs.push_back(StubFunc);
+      if (auto *CI2 = dyn_cast<CallInst>(callee)) {
+        if (CI2->getCalledFunction() == StubFunc) {
+          ToBeInlinedCIs.push_back(CI2);
           continue;
         }
       }
     }
   }
+
+  for (auto CI : ToBeInlinedCIs) {
+    Function *StubFunc = CI->getCalledFunction();
+    InlineFunctionInfo IFI;
+    InlineResult Res = InlineFunction(*CI, IFI, /*MergeAttributes=*/false);
+    assert(Res.isSuccess());
+    InlinedStubs.push_back(StubFunc);
+  }
+
+  // **Remove empty stub functions**
   for (Function *F : InlinedStubs) {
     F->erase(F->begin(), F->end());
     BasicBlock *BB = BasicBlock::Create(F->getContext(), "entry", F);

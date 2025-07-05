@@ -84,9 +84,11 @@ public:
   /// and/or operands have been modified.
   LogicalResult canonicalize();
 
-  bool operator==(AffineValueMap &&other) {
-    return map.getAffineMap() == other.map.getAffineMap() &&
-           operands == other.operands;
+  /// Checks if the application of this map to its operands is semantically
+  /// equal to `other`'s.
+  bool operator==(const AffineValueMap &other) const;
+  bool operator!=(const AffineValueMap &other) const {
+    return !(*this == other);
   }
 
 private:

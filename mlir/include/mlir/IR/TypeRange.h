@@ -23,21 +23,21 @@ namespace mlir {
 
 //===----------------------------------------------------------------------===//
 // TypeRange
+//===----------------------------------------------------------------------===//
 
 /// This class provides an abstraction over the various different ranges of
 /// value types. In many cases, this prevents the need to explicitly materialize
 /// a SmallVector/std::vector. This class should be used in places that are not
 /// suitable for a more derived type (e.g. ArrayRef) or a template range
 /// parameter.
-class TypeRange
-    : public llvm::detail::indexed_accessor_range_base<
-          TypeRange,
-          llvm::PointerUnion<const Value *, const Type *, OpOperand *,
-                             detail::OpResultImpl *, Type>,
-          Type, Type, Type> {
+class TypeRange : public llvm::detail::indexed_accessor_range_base<
+                      TypeRange,
+                      llvm::PointerUnion<const Value *, const Type *,
+                                         OpOperand *, detail::OpResultImpl *>,
+                      Type, Type, Type> {
 public:
   using RangeBaseT::RangeBaseT;
-  TypeRange(ArrayRef<Type> types = std::nullopt);
+  TypeRange(ArrayRef<Type> types = {});
   explicit TypeRange(OperandRange values);
   explicit TypeRange(ResultRange values);
   explicit TypeRange(ValueRange values);
@@ -45,13 +45,11 @@ public:
   TypeRange(ValueTypeRange<ValueRangeT> values)
       : TypeRange(ValueRange(ValueRangeT(values.begin().getCurrent(),
                                          values.end().getCurrent()))) {}
-
-  TypeRange(Type type) : TypeRange(type, /*count=*/1) {}
-  template <typename Arg, typename = std::enable_if_t<
-                              std::is_constructible_v<ArrayRef<Type>, Arg> &&
-                              !std::is_constructible_v<Type, Arg>>>
-  TypeRange(Arg &&arg) : TypeRange(ArrayRef<Type>(std::forward<Arg>(arg))) {}
-  TypeRange(std::initializer_list<Type> types)
+  template <typename Arg, typename = std::enable_if_t<std::is_constructible<
+                              ArrayRef<Type>, Arg>::value>>
+  TypeRange(Arg &&arg LLVM_LIFETIME_BOUND)
+      : TypeRange(ArrayRef<Type>(std::forward<Arg>(arg))) {}
+  TypeRange(std::initializer_list<Type> types LLVM_LIFETIME_BOUND)
       : TypeRange(ArrayRef<Type>(types)) {}
 
 private:
@@ -60,9 +58,8 @@ private:
   /// * A pointer to the first element of an array of types.
   /// * A pointer to the first element of an array of operands.
   /// * A pointer to the first element of an array of results.
-  /// * A single 'Type' instance.
   using OwnerT = llvm::PointerUnion<const Value *, const Type *, OpOperand *,
-                                    detail::OpResultImpl *, Type>;
+                                    detail::OpResultImpl *>;
 
   /// See `llvm::detail::indexed_accessor_range_base` for details.
   static OwnerT offset_base(OwnerT object, ptrdiff_t index);
@@ -75,7 +72,7 @@ private:
 
 /// Make TypeRange hashable.
 inline ::llvm::hash_code hash_value(TypeRange arg) {
-  return ::llvm::hash_combine_range(arg.begin(), arg.end());
+  return ::llvm::hash_combine_range(arg);
 }
 
 /// Emit a type range to the given output stream.
@@ -86,6 +83,7 @@ inline raw_ostream &operator<<(raw_ostream &os, const TypeRange &types) {
 
 //===----------------------------------------------------------------------===//
 // TypeRangeRange
+//===----------------------------------------------------------------------===//
 
 using TypeRangeRangeIterator =
     llvm::mapped_iterator<llvm::iota_range<unsigned>::iterator,
@@ -115,6 +113,7 @@ private:
 
 //===----------------------------------------------------------------------===//
 // ValueTypeRange
+//===----------------------------------------------------------------------===//
 
 /// This class implements iteration on the types of a given range of values.
 template <typename ValueIteratorT>

@@ -15,7 +15,6 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpDefinition.h"
-#include "llvm/ADT/BitVector.h"
 #include "llvm/Support/SHA1.h"
 #include <numeric>
 #include <optional>
@@ -60,11 +59,6 @@ DictionaryAttr NamedAttrList::getDictionary(MLIRContext *context) const {
   if (!dictionarySorted.getPointer())
     dictionarySorted.setPointer(DictionaryAttr::getWithSorted(context, attrs));
   return llvm::cast<DictionaryAttr>(dictionarySorted.getPointer());
-}
-
-/// Add an attribute with the specified name.
-void NamedAttrList::append(StringRef name, Attribute attr) {
-  append(StringAttr::get(attr.getContext(), name), attr);
 }
 
 /// Replaces the attributes with new list of attributes.
@@ -388,6 +382,7 @@ MutableArrayRef<OpOperand> detail::OperandStorage::resize(Operation *owner,
 
 //===----------------------------------------------------------------------===//
 // OperandRange
+//===----------------------------------------------------------------------===//
 
 unsigned OperandRange::getBeginOperandIndex() const {
   assert(!empty() && "range must not be empty");
@@ -400,6 +395,7 @@ OperandRangeRange OperandRange::split(DenseI32ArrayAttr segmentSizes) const {
 
 //===----------------------------------------------------------------------===//
 // OperandRangeRange
+//===----------------------------------------------------------------------===//
 
 OperandRangeRange::OperandRangeRange(OperandRange operands,
                                      Attribute operandSegments)
@@ -424,6 +420,7 @@ OperandRange OperandRangeRange::dereference(const OwnerT &object,
 
 //===----------------------------------------------------------------------===//
 // MutableOperandRange
+//===----------------------------------------------------------------------===//
 
 /// Construct a new mutable range from the given operand, operand start index,
 /// and range length.
@@ -547,6 +544,7 @@ MutableArrayRef<OpOperand>::iterator MutableOperandRange::end() const {
 
 //===----------------------------------------------------------------------===//
 // MutableOperandRangeRange
+//===----------------------------------------------------------------------===//
 
 MutableOperandRangeRange::MutableOperandRangeRange(
     const MutableOperandRange &operands, NamedAttribute operandSegmentAttr)
@@ -576,6 +574,7 @@ MutableOperandRange MutableOperandRangeRange::dereference(const OwnerT &object,
 
 //===----------------------------------------------------------------------===//
 // ResultRange
+//===----------------------------------------------------------------------===//
 
 ResultRange::ResultRange(OpResult result)
     : ResultRange(static_cast<detail::OpResultImpl *>(Value(result).getImpl()),
@@ -642,6 +641,7 @@ void ResultRange::replaceUsesWithIf(
 
 //===----------------------------------------------------------------------===//
 // ValueRange
+//===----------------------------------------------------------------------===//
 
 ValueRange::ValueRange(ArrayRef<Value> values)
     : ValueRange(values.data(), values.size()) {}
@@ -653,15 +653,6 @@ ValueRange::ValueRange(ResultRange values)
 /// See `llvm::detail::indexed_accessor_range_base` for details.
 ValueRange::OwnerT ValueRange::offset_base(const OwnerT &owner,
                                            ptrdiff_t index) {
-  if (llvm::isa_and_nonnull<Value>(owner)) {
-    // Prevent out-of-bounds indexing for single values.
-    // Note that we do allow an index of 1 as is required by 'slice'ing that
-    // returns an empty range. This also matches the usual rules of C++ of being
-    // allowed to index past the last element of an array.
-    assert(index <= 1 && "out-of-bound offset into single-value 'ValueRange'");
-    // Return nullptr to quickly cause segmentation faults on misuse.
-    return index == 0 ? owner : nullptr;
-  }
   if (const auto *value = llvm::dyn_cast_if_present<const Value *>(owner))
     return {value + index};
   if (auto *operand = llvm::dyn_cast_if_present<OpOperand *>(owner))
@@ -670,10 +661,6 @@ ValueRange::OwnerT ValueRange::offset_base(const OwnerT &owner,
 }
 /// See `llvm::detail::indexed_accessor_range_base` for details.
 Value ValueRange::dereference_iterator(const OwnerT &owner, ptrdiff_t index) {
-  if (auto value = llvm::dyn_cast_if_present<Value>(owner)) {
-    assert(index == 0 && "cannot offset into single-value 'ValueRange'");
-    return value;
-  }
   if (const auto *value = llvm::dyn_cast_if_present<const Value *>(owner))
     return value[index];
   if (auto *operand = llvm::dyn_cast_if_present<OpOperand *>(owner))
@@ -692,9 +679,13 @@ llvm::hash_code OperationEquivalence::computeHash(
   //   - Operation Name
   //   - Attributes
   //   - Result Types
+  DictionaryAttr dictAttrs;
+  if (!(flags & Flags::IgnoreDiscardableAttrs))
+    dictAttrs = op->getRawDictionaryAttrs();
   llvm::hash_code hash =
-      llvm::hash_combine(op->getName(), op->getRawDictionaryAttrs(),
-                         op->getResultTypes(), op->hashProperties());
+      llvm::hash_combine(op->getName(), dictAttrs, op->getResultTypes());
+  if (!(flags & Flags::IgnoreProperties))
+    hash = llvm::hash_combine(hash, op->hashProperties());
 
   //   - Location if required
   if (!(flags & Flags::IgnoreLocations))
@@ -848,14 +839,19 @@ OperationEquivalence::isRegionEquivalentTo(Region *lhs, Region *rhs,
     return true;
 
   // 1. Compare the operation properties.
+  if (!(flags & IgnoreDiscardableAttrs) &&
+      lhs->getRawDictionaryAttrs() != rhs->getRawDictionaryAttrs())
+    return false;
+
   if (lhs->getName() != rhs->getName() ||
-      lhs->getRawDictionaryAttrs() != rhs->getRawDictionaryAttrs() ||
       lhs->getNumRegions() != rhs->getNumRegions() ||
       lhs->getNumSuccessors() != rhs->getNumSuccessors() ||
       lhs->getNumOperands() != rhs->getNumOperands() ||
-      lhs->getNumResults() != rhs->getNumResults() ||
-      !lhs->getName().compareOpProperties(lhs->getPropertiesStorage(),
-                                          rhs->getPropertiesStorage()))
+      lhs->getNumResults() != rhs->getNumResults())
+    return false;
+  if (!(flags & IgnoreProperties) &&
+      !(lhs->getName().compareOpProperties(lhs->getPropertiesStorage(),
+                                           rhs->getPropertiesStorage())))
     return false;
   if (!(flags & IgnoreLocations) && lhs->getLoc() != rhs->getLoc())
     return false;

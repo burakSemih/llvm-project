@@ -664,7 +664,7 @@ def GPU_CallOp :GPU_Op<"call", [
 
     /// Set the callee for this operation.
     void setCalleeFromCallable(CallInterfaceCallable callee) {
-      setKernelAttr(callee.get<SymbolRefAttr>());
+      setKernelAttr(cast<SymbolRefAttr>(callee));
     }
   }];
 

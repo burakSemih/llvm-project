@@ -1024,7 +1024,7 @@ LogicalResult ModuleImport::convertGlobals() {
 
 LogicalResult ModuleImport::initializeTriple() {
   mlirModule->setAttr(LLVM::LLVMDialect::getTargetTripleAttrName(),
-                      builder.getStringAttr(llvmModule->getTargetTriple()));
+                      builder.getStringAttr(llvmModule->getTargetTriple().str()));
   return success();
 }
 

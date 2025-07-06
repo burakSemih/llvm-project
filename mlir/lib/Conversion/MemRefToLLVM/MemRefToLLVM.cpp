@@ -2202,10 +2202,10 @@ struct FinalizeMemRefToLLVMConversionPass
 
     LLVMTypeConverter typeConverter(&getContext(), options,
                                     &dataLayoutAnalysis);
-    RewritePatternSet patterns(&getContext());
-    SymbolTableCollection symbolTables;
-    populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns,
-                                                   &symbolTables);
+    // RewritePatternSet patterns(&getContext());
+    // SymbolTableCollection symbolTables;
+    // populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns,
+    //                                                &symbolTables);
     LLVMConversionTarget target(getContext());
     target.addLegalOp<func::FuncOp>();
     RewritePatternSet patterns(&getContext());

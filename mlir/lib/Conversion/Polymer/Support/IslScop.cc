@@ -870,7 +870,7 @@ public:
 
     isl_ast_expr_free(Expr);
     return b.create<arith::SubIOp>(
-        loc, b.create<arith::ConstantIntOp>(loc, 0, MaxType), V);
+        loc, b.create<arith::ConstantIntOp>(loc, MaxType, 0), V);
   }
   Value createOpAccess(__isl_take isl_ast_expr *Expr) {
     llvm_unreachable("unimplemented");
@@ -934,8 +934,8 @@ public:
       //       incorrect overflow in some edge cases.
       //
       // floord(n,d) ((n < 0) ? (n - d + 1) : n) / d
-      Value One = b.create<arith::ConstantIntOp>(loc, 1, MaxType);
-      Value Zero = b.create<arith::ConstantIntOp>(loc, 0, MaxType);
+      Value One = b.create<arith::ConstantIntOp>(loc, MaxType, 1);
+      Value Zero = b.create<arith::ConstantIntOp>(loc, MaxType, 0);
       Value Sum1 = createSub(LHS, RHS, "pexp.fdiv_q.0");
       Value Sum2 = createAdd(Sum1, One, "pexp.fdiv_q.1");
       Value isNegative =
@@ -1135,7 +1135,7 @@ public:
       T = b.getIntegerType(BitWidth);
 
     APValue = APValue.sext(T.getWidth());
-    V = b.create<arith::ConstantIntOp>(loc, APValue.getSExtValue(), T);
+    V = b.create<arith::ConstantIntOp>(loc, T, APValue.getSExtValue());
 
     isl_ast_expr_free(Expr);
     return V;
@@ -1440,7 +1440,7 @@ public:
     SmallVector<Value *> Args({&args...});
     for (unsigned I = 0; I < Args.size(); I++) {
       Type Ty = Args[I]->getType();
-      if (!Ty.isa<IndexType>()) {
+      if (!isa<IndexType>(Ty)) {
         *Args[I] =
             b.create<arith::IndexCastOp>(loc, b.getIndexType(), *Args[I]);
       }
@@ -1451,29 +1451,29 @@ public:
   Type convertToMaxWidth(Ts &&...args) {
     SmallVector<Value *> Args({&args...});
     if (llvm::all_of(Args,
-                     [&](Value *V) { return V->getType().isa<IndexType>(); }))
+                     [&](Value *V) { return isa<IndexType>(V->getType()); }))
       return Args[0]->getType();
     Type MaxTypeI = Args[0]->getType();
     IntegerType MaxType;
-    if (MaxTypeI.isa<IndexType>())
+    if (isa<IndexType>(MaxTypeI))
       // TODO This is temporary and we should get the target system index here
       MaxType = getMaxType();
     else
-      MaxType = MaxTypeI.cast<IntegerType>();
+      MaxType = cast<IntegerType>(MaxTypeI);
     unsigned MaxWidth = MaxType.getWidth();
     for (unsigned I = 0; I < Args.size(); I++) {
       Type Ty = Args[I]->getType();
-      if (Ty.isa<IndexType>())
+      if (isa<IndexType>(Ty))
         // TODO This is temporary and we should get the target system index here
         Ty = getMaxType();
-      if (Ty.cast<IntegerType>().getWidth() > MaxWidth) {
-        MaxType = Ty.cast<IntegerType>();
+      if (cast<IntegerType>(Ty).getWidth() > MaxWidth) {
+        MaxType = cast<IntegerType>(Ty);
         MaxWidth = MaxType.getWidth();
       }
     }
     for (unsigned I = 0; I < Args.size(); I++) {
       Type Ty = Args[I]->getType();
-      if (Ty.isa<IndexType>()) {
+      if (isa<IndexType>(Ty)) {
         *Args[I] = b.create<arith::IndexCastOp>(loc, MaxType, *Args[I]);
       } else if (Ty != MaxType) {
         *Args[I] = b.create<arith::ExtSIOp>(loc, MaxType, *Args[I]);
@@ -1512,7 +1512,7 @@ public:
       if (Predicate == arith::CmpIPredicate::sle)
         ValueUB = b.create<arith::AddIOp>(
             loc, ValueUB,
-            b.create<arith::ConstantIntOp>(loc, 1, ValueUB.getType()));
+            b.create<arith::ConstantIntOp>(loc, ValueUB.getType(), 1));
 
       convertToIndex(ValueLB, ValueUB, ValueInc);
 
@@ -1570,7 +1570,7 @@ public:
     if (Predicate == arith::CmpIPredicate::sle)
       ValueUB = b.create<arith::AddIOp>(
           loc, ValueUB,
-          b.create<arith::ConstantIntOp>(loc, 1, ValueUB.getType()));
+          b.create<arith::ConstantIntOp>(loc, ValueUB.getType(), 1));
 
     // scf::ParallelOp only supports index as bounds
     if constexpr (std::is_same<ForOpTy, scf::ParallelOp>::value) {

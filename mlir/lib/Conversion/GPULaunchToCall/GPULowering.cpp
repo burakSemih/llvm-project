@@ -191,7 +191,7 @@ public:
 
     Attribute initialValue = nullptr;
     if (!globalOp.isExternal() && !globalOp.isUninitialized()) {
-      auto elementsAttr = globalOp.getInitialValue()->cast<ElementsAttr>();
+      auto elementsAttr = cast<ElementsAttr>(*(globalOp.getInitialValue()));
       initialValue = elementsAttr;
 
       // For scalar memrefs, the global variable created is of the element type,
@@ -305,8 +305,7 @@ getAccessPointer(RewriterBase &rewriter, const LLVMTypeConverter &typeConverter,
                  Operation *op, TypedValue<MemRefType> baseMemref,
                  Value basePtr, ValueRange indices) {
   auto baseMemrefTy = baseMemref.getType();
-  auto isContiguious =
-      mlir::trailingNDimsContiguous(baseMemrefTy, baseMemrefTy.getRank());
+  auto isContiguious = baseMemrefTy.areTrailingDimsContiguous(baseMemrefTy.getRank());
   if (!isContiguious && !isAtAddrMemref(baseMemref))
     return rewriter.notifyMatchFailure(op, "Memref layout is not contiguous");
 

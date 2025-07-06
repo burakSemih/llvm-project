@@ -1344,7 +1344,7 @@ struct GPUAffineOptPass : impl::GPUAffineOptPassBase<GPUAffineOptPass> {
       patterns.insert<RegisterAllocaReduce>(context);
       GreedyRewriteConfig config;
       if (failed(
-              applyPatternsAndFoldGreedily(op, std::move(patterns), config))) {
+              applyPatternsGreedily(op, std::move(patterns), config))) {
         signalPassFailure();
         return;
       }

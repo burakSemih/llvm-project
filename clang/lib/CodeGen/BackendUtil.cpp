@@ -264,7 +264,6 @@ static std::string getProfileGenName(const CodeGenOptions &CodeGenOpts) {
   return FileName;
 }
 
-namespace {
 
 class EmitAssemblyHelper {
   CompilerInstance &CI;
@@ -1754,16 +1753,21 @@ void applyAll(
     seq.setVisibility(mlir::SymbolTable::Visibility::Private);
     builder.createBlock(&seq.getBody(), {}, seqTypes,
                         SmallVector<Location>(argNum + 1, loc));
+    
+    transform::IncludeOp::Properties props;
+    props.target = SymbolRefAttr::get(toInclude.getSymNameAttr());
+    props.failure_propagation_mode = transform::FailurePropagationModeAttr::get(
+    builder.getContext(), transform::FailurePropagationMode::Propagate);
     builder.create<transform::IncludeOp>(
         loc, /* TODO should match the callee or we should just reject sequences
-                yielding any values (probably better to match) */
-        TypeRange(), SymbolRefAttr::get(toInclude.getSymNameAttr()),
-        transform::FailurePropagationMode::Propagate,
-        llvm::map_to_vector(
-            llvm::drop_begin(seq.getBody().getArguments()),
-            [&](BlockArgument ba) -> mlir::Value { return ba; }));
-    builder.create<transform::YieldOp>(loc, ValueRange());
+                    yielding any values (probably better to match) */
+        /* resultTypes */ TypeRange{},
+        /* operands */ llvm::map_to_vector(
+        llvm::drop_begin(seq.getBody().getArguments()),
+        [](BlockArgument ba) -> mlir::Value { return ba; }),
+        props);
 
+    builder.create<transform::YieldOp>(loc, ValueRange());
     llvm::errs() << "info: applying transformation " << sym << "\n";
     if (failed(transform::applyTransforms(MlirModule, seq, extraMapping,
                                           transform::TransformOptions(),

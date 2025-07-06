@@ -425,17 +425,17 @@ llvm::LaunchKernel::createKernelLaunch(mlir::gpu::LaunchFuncOp op,
 
   // Load the kernel module.
   StringRef moduleName = op.getKernelModuleName().getValue();
-  std::string binaryIdentifier = getBinaryIdentifier(moduleName);
-  Value *binary = module.getGlobalVariable(binaryIdentifier, true);
-  if (!binary)
-    return op.emitError() << "Couldn't find the binary: " << binaryIdentifier;
+  Twine moduleIdentifier = getModuleIdentifier(moduleName);
+  Value *modulePtr = module.getGlobalVariable(moduleIdentifier.str(), true);
+  if (!modulePtr)
+    return op.emitError() << "Couldn't find the binary: " << moduleIdentifier;
 
   std::string ctorName =
-      std::string("__mlir_gpu_module_ctor_") + binaryIdentifier;
+      std::string("__mlir_gpu_module_ctor_") + moduleIdentifier;
   std::string dtorName =
-      std::string("__mlir_gpu_module_dtor_") + binaryIdentifier;
+      std::string("__mlir_gpu_module_dtor_") + moduleIdentifier;
   std::string moduleHandleName =
-      std::string("__mlir_gpu_module_handle_") + binaryIdentifier;
+      std::string("__mlir_gpu_module_handle_") + moduleIdentifier;
 
   BasicBlock *insertBlock = builder.GetInsertBlock();
   auto insertPoint = builder.GetInsertPoint();
@@ -467,24 +467,24 @@ llvm::LaunchKernel::createKernelLaunch(mlir::gpu::LaunchFuncOp op,
       optV = llvm::ConstantInt::get(i32Ty, optLevel.getValue());
     }
 
-    auto binaryVar = dyn_cast<llvm::GlobalVariable>(binary);
+    auto binaryVar = dyn_cast<llvm::GlobalVariable>(modulePtr);
     if (!binaryVar)
       return op.emitError()
-             << "Binary is not a global variable: " << binaryIdentifier;
+             << "Binary is not a global variable: " << moduleIdentifier;
     llvm::Constant *binaryInit = binaryVar->getInitializer();
     auto binaryDataSeq =
         dyn_cast_if_present<llvm::ConstantDataSequential>(binaryInit);
     if (!binaryDataSeq)
       return op.emitError()
-             << "Couldn't find binary data array: " << binaryIdentifier;
+             << "Couldn't find binary data array: " << moduleIdentifier;
     llvm::Constant *binarySize =
         llvm::ConstantInt::get(i64Ty, binaryDataSeq->getNumElements() *
                                           binaryDataSeq->getElementByteSize());
 
     Value *moduleObject =
         object.getFormat() == gpu::CompilationTarget::Assembly
-            ? builder.CreateCall(getModuleLoadJITFn(), {binary, optV})
-            : builder.CreateCall(getModuleLoadFn(), {binary, binarySize});
+            ? builder.CreateCall(getModuleLoadJITFn(), {modulePtr, optV})
+            : builder.CreateCall(getModuleLoadFn(), {modulePtr, binarySize});
 
     builder.CreateStore(moduleObject, moduleHandleGlobal);
     builder.CreateRetVoid();
@@ -502,7 +502,7 @@ llvm::LaunchKernel::createKernelLaunch(mlir::gpu::LaunchFuncOp op,
     appendToGlobalDtors(module, dtor, 101);
   }
   std::string functionHandleName = std::string("__mlir_gpu_function_handle_") +
-                                   binaryIdentifier +
+                                   moduleIdentifier +
                                    op.getKernelName().getValue().str();
   GlobalVariable *functionHandleGlobal =
       module.getNamedGlobal(functionHandleName);

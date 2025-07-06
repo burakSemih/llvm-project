@@ -173,7 +173,7 @@ static inline mlir::Value bitcastFromVec(mlir::RewriterBase &rewriter,
   if (isa<LLVM::LLVMPointerType>(ty)) {
     Type intTy = rewriter.getIntegerType((int64_t)dl.getTypeSize(ty) * 8);
     auto cast = rewriter.create<LLVM::BitcastOp>(v.getLoc(), intTy, v);
-    return rewriter.create<LLVM::IntToPtrOp>(v.getLoc(), ty, cast);
+    return rewriter.create<LLVM::IntToPtrOp>(v.getLoc(), ty, cast.getResult());
   } else {
     return rewriter.create<LLVM::BitcastOp>(v.getLoc(), ty, v);
   }

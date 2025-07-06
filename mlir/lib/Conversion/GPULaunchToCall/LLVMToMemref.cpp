@@ -1216,7 +1216,7 @@ convertLLVMToAffineAccess(Operation *op,
   RewritePatternSet patterns(context);
   patterns.insert<ConvertLLVMAllocaToMemrefAlloca>(context, dataLayoutAnalysis);
   GreedyRewriteConfig config;
-  return applyPatternsAndFoldGreedily(op, std::move(patterns), config);
+  return applyPatternsGreedily(op, std::move(patterns), config);
 }
 } // namespace mlir
 
@@ -1402,7 +1402,7 @@ struct LLVMToAffineAccessPass
     RewritePatternSet patterns(context);
     populateRemoveIVPatterns(patterns);
     GreedyRewriteConfig config;
-    if (failed(applyPatternsAndFoldGreedily(getOperation(), std::move(patterns),
+    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns),
                                             config))) {
       signalPassFailure();
       return;

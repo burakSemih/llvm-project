@@ -6968,6 +6968,9 @@ public:
   ///@{
 
 private:
+  std::unique_ptr<PragmaHandler> TransformImportHandler;
+  std::unique_ptr<PragmaHandler> TransformApplyHandler;
+  std::unique_ptr<PragmaHandler> TransformLabelHandler;
   std::unique_ptr<PragmaHandler> AlignHandler;
   std::unique_ptr<PragmaHandler> GCCVisibilityHandler;
   std::unique_ptr<PragmaHandler> OptionsHandler;
@@ -7022,6 +7025,12 @@ private:
 
   /// Destroy and reset all pragma handlers.
   void resetPragmaHandlers();
+
+  void HandlePragmaTransformLabel();
+
+  void HandlePragmaTransformImport();
+
+  void HandlePragmaTransformApply();
 
   /// Handle the annotation token produced for #pragma unused(...)
   ///
@@ -7463,6 +7472,20 @@ public:
   StmtResult ParsePragmaLoopHint(StmtVector &Stmts, ParsedStmtContext StmtCtx,
                                  SourceLocation *TrailingElseLoc,
                                  ParsedAttributes &Attrs);
+
+  StmtResult ParsePragmaTransformApply(StmtVector &Stmts,
+                                       ParsedStmtContext StmtCtx,
+                                       ParsedAttributes &Attrs);
+
+  StmtResult ParsePragmaTransformImport(StmtVector &Stmts,
+                                        ParsedStmtContext StmtCtx,
+                                        SourceLocation *TrailingElseLoc,
+                                        ParsedAttributes &Attrs);
+
+  StmtResult ParsePragmaTransformLabel(StmtVector &Stmts,
+                                       ParsedStmtContext StmtCtx,
+                                       SourceLocation *TrailingElseLoc,
+                                       ParsedAttributes &Attrs);
 
   void ParseMicrosoftIfExistsStatement(StmtVector &Stmts);
 

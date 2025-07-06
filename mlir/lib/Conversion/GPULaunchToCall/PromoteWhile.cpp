@@ -48,7 +48,7 @@ mlir::TypedAttr getConstVal(mlir::Operation *op) {
   if (!op->hasTrait<mlir::OpTrait::ConstantLike>())
     return {};
 
-  return op->getAttr("value").dyn_cast<mlir::TypedAttr>();
+  return dyn_cast<mlir::TypedAttr>(op->getAttr("value"));
 }
 
 mlir::TypedAttr getConstVal(mlir::Value op) {
@@ -61,10 +61,10 @@ mlir::TypedAttr getConstVal(mlir::Value op) {
 
 mlir::TypedAttr getConstAttr(mlir::Type type, double val) {
   assert(type);
-  if (type.isa<mlir::FloatType>())
+  if (isa<mlir::FloatType>(type))
     return mlir::FloatAttr::get(type, val);
 
-  if (type.isa<mlir::IntegerType, mlir::IndexType>())
+  if (isa<mlir::IntegerType, mlir::IndexType>(type))
     return mlir::IntegerAttr::get(type, static_cast<int64_t>(val));
 
   return {};
@@ -73,10 +73,10 @@ mlir::TypedAttr getConstAttr(mlir::Type type, double val) {
 int64_t getIntAttrValue(mlir::IntegerAttr attr) {
   assert(attr);
   auto attrType = attr.getType();
-  if (attrType.isa<mlir::IndexType>())
+  if (isa<mlir::IndexType>(attrType))
     return attr.getInt();
 
-  auto type = attrType.cast<mlir::IntegerType>();
+  auto type = cast<mlir::IntegerType>(attrType);
   if (type.isSigned()) {
     return attr.getSInt();
   } else if (type.isUnsigned()) {
@@ -1177,7 +1177,7 @@ struct PromoteWhilePass
     populateLoopOptsPatterns(patterns);
     mlir::scf::WhileOp::getCanonicalizationPatterns(patterns, context);
 
-    if (mlir::failed(mlir::applyPatternsAndFoldGreedily(getOperation(),
+    if (mlir::failed(mlir::applyPatternsGreedily(getOperation(),
                                                         std::move(patterns))))
       signalPassFailure();
   }

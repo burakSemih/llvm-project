@@ -129,7 +129,7 @@ void handleCudaPushPopConfigs(Module &M, SmallPtrSet<CallInst *, 8> &CoercedKern
     }
     CoercedKernels.insert(KernelLaunch);
 
-    It = PopCall->getParent()->getPrevNode()->getFirstNonPHIOrDbg();
+    It = &*PopCall->getParent()->getPrevNode()->getFirstNonPHIOrDbg();
     CallInst *PushCall = dyn_cast<CallInst>(It);
     while (!It->isTerminator() &&
            !(PushCall && PushCall->getCalledFunction() &&

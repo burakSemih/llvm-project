@@ -636,7 +636,7 @@ static bool isNormalized(scf::ParallelOp op) {
 }
 static bool isNormalized(affine::AffineParallelOp op) {
   auto isZero = [](AffineExpr v) {
-    if (auto ce = v.dyn_cast<AffineConstantExpr>())
+    if (auto ce = dyn_cast<AffineConstantExpr>(v))
       return ce.getValue() == 0;
     return false;
   };
@@ -1669,7 +1669,7 @@ static std::pair<Block *, Block::iterator> getInsertionPointAfterDef(Value v) {
   if (Operation *op = v.getDefiningOp())
     return {op->getBlock(), std::next(Block::iterator(op))};
 
-  BlockArgument blockArg = v.cast<BlockArgument>();
+  BlockArgument blockArg = cast<BlockArgument>(v);
   return {blockArg.getParentBlock(), blockArg.getParentBlock()->begin()};
 }
 
@@ -2907,10 +2907,9 @@ LogicalResult mlir::distributeParallelLoops(Operation *op, StringRef method,
         addPatterns<true>(patterns, method, context);
       else
         addPatterns<false>(patterns, method, context);
-      GreedyRewriteConfig config;
-      config.maxIterations = 142;
+      GreedyRewriteConfig config = GreedyRewriteConfig().setMaxIterations(142);
       if (failed(
-              applyPatternsAndFoldGreedily(op, std::move(patterns), config))) {
+              applyPatternsGreedily(op, std::move(patterns), config))) {
         return failure();
       }
     }

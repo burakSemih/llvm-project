@@ -1353,6 +1353,14 @@ unsigned CallOp::getNumKernelOperands() { return getKernelOperands().size(); }
 
 Value CallOp::getKernelOperand(unsigned i) { return getKernelOperands()[i]; }
 
+void CallOp::removeResAttrsAttr() {
+  (*this)->removeAttr("res_attrs");
+}
+
+void CallOp::removeArgAttrsAttr() {
+  (*this)->removeAttr("arg_attrs");
+}
+
 //===----------------------------------------------------------------------===//
 // ShuffleOp
 //===----------------------------------------------------------------------===//

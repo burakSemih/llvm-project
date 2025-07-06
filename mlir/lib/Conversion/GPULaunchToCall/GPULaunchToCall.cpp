@@ -403,7 +403,7 @@ FailureOr<ConvertedKernel> convertGPUKernelToParallel(Operation *gpuKernelFunc,
                    .create<LLVM::AllocaOp>(
                        global.getLoc(), addrOf.getRes().getType(), arrayType,
                        blockBuilder.create<arith::ConstantIntOp>(
-                           global->getLoc(), 1, blockBuilder.getI32Type()))
+                           global->getLoc(), blockBuilder.getI32Type(), 1))
                    .getResult();
       globalToAlloca[global] = alloca;
     }
@@ -479,7 +479,7 @@ static mlir::Value createConstantInt(RewriterBase &rewriter, Location loc,
   if (ty.isIndex())
     return rewriter.create<arith::ConstantIndexOp>(loc, v);
   else
-    return rewriter.create<arith::ConstantIntOp>(loc, v, ty);
+    return rewriter.create<arith::ConstantIntOp>(loc, ty, v);
 }
 
 struct ConvertedForLaunch {
@@ -754,7 +754,7 @@ struct GPULaunchToParallelPass
     RewritePatternSet patterns(context);
     patterns.insert<CallConstantPropagation<gpu::CallOp>>(context);
     GreedyRewriteConfig config;
-    if (failed(applyPatternsAndFoldGreedily(getOperation(), std::move(patterns),
+    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns),
                                             config)))
       signalPassFailure();
   }

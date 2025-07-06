@@ -84,7 +84,7 @@ static Attr *handleTransformImport(Sema &S, Stmt *St, const ParsedAttr &A,
 static Attr *handleTransformLabel(Sema &S, Stmt *St, const ParsedAttr &A,
                                   SourceRange) {
   return ::new (S.Context)
-      TransformLabelAttr(S.Context, A, A.getArgAsIdent(0)->Ident->getName());
+      TransformLabelAttr(S.Context, A, A.getArgAsIdent(0)->getIdentifierInfo()->getName());
 }
 
 static Attr *handleLoopHintAttr(Sema &S, Stmt *St, const ParsedAttr &A,
